@@ -1,4 +1,4 @@
-package com.example.brainrotclicker
+package com.blinklabs.brainrotclicker
 
 import io.flutter.embedding.android.FlutterActivity
 
