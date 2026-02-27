@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import 'models/game_state.dart';
 import 'screens/game_screen.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -16,16 +16,19 @@ void main() {
       statusBarIconBrightness: Brightness.light,
     ),
   );
-  runApp(const BrainrotClickerApp());
+  final gameState = await GameState.load();
+  runApp(BrainrotClickerApp(gameState: gameState));
 }
 
 class BrainrotClickerApp extends StatelessWidget {
-  const BrainrotClickerApp({super.key});
+  const BrainrotClickerApp({super.key, required this.gameState});
+
+  final GameState gameState;
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => GameState(),
+    return ChangeNotifierProvider.value(
+      value: gameState,
       child: MaterialApp(
         title: 'Brainrot Clicker',
         debugShowCheckedModeBanner: false,

@@ -74,6 +74,46 @@ const List<CharacterBuilding> kCharacters = [
     cpsPerUnit: 40,
     color: Color(0xFFFFE66D),
   ),
+  CharacterBuilding(
+    id: 'lirililarila',
+    name: 'Lirili Larila',
+    assetPath: 'assets/images/lirililarila.png',
+    baseCost: 12000,
+    cpsPerUnit: 300,
+    color: Color(0xFF7EC8E3),
+  ),
+  CharacterBuilding(
+    id: 'chimpanzinibananini',
+    name: 'Chimpanzini Bananini',
+    assetPath: 'assets/images/chimpanzinibananini.png',
+    baseCost: 130000,
+    cpsPerUnit: 2000,
+    color: Color(0xFFF4D03F),
+  ),
+  CharacterBuilding(
+    id: 'ballerinacappucina',
+    name: 'Ballerina Cappucina',
+    assetPath: 'assets/images/ballerinacappucina.png',
+    baseCost: 1400000,
+    cpsPerUnit: 14000,
+    color: Color(0xFFFFB7C5),
+  ),
+  CharacterBuilding(
+    id: 'bombardillocrocodillo',
+    name: 'Bombardillo Crocodillo',
+    assetPath: 'assets/images/bombardillocrocodillo.png',
+    baseCost: 20000000,
+    cpsPerUnit: 100000,
+    color: Color(0xFFFF7043),
+  ),
+  CharacterBuilding(
+    id: 'trippitroppi',
+    name: 'Trippi Troppi',
+    assetPath: 'assets/images/trippitroppi.png',
+    baseCost: 330000000,
+    cpsPerUnit: 750000,
+    color: Color(0xFF9B59B6),
+  ),
 ];
 
 const List<ClickUpgrade> kClickUpgrades = [

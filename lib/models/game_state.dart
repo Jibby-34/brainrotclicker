@@ -1,19 +1,72 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'game_data.dart';
 
 class GameState extends ChangeNotifier {
-  double _totalClicks = 0;
-  double _clickPower = 1;
-  final Map<String, int> _owned = {};
-  final Set<String> _purchasedUpgrades = {};
+  double _totalClicks;
+  double _clickPower;
+  final Map<String, int> _owned;
+  final Set<String> _purchasedUpgrades;
   Timer? _ticker;
+  Timer? _saveTicker;
 
-  GameState() {
+  static const _keyTotalClicks = 'totalClicks';
+  static const _keyClickPower = 'clickPower';
+  static const _keyOwned = 'owned';
+  static const _keyPurchasedUpgrades = 'purchasedUpgrades';
+
+  GameState._({
+    double totalClicks = 0,
+    double clickPower = 1,
+    Map<String, int>? owned,
+    Set<String>? purchasedUpgrades,
+  })  : _totalClicks = totalClicks,
+        _clickPower = clickPower,
+        _owned = owned ?? {},
+        _purchasedUpgrades = purchasedUpgrades ?? {} {
     for (final c in kCharacters) {
-      _owned[c.id] = 0;
+      _owned.putIfAbsent(c.id, () => 0);
     }
     _ticker = Timer.periodic(const Duration(milliseconds: 100), _onTick);
+    // Autosave every 5 seconds to capture passive income & taps
+    _saveTicker = Timer.periodic(const Duration(seconds: 5), (_) => _save());
+  }
+
+  static Future<GameState> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final totalClicks = prefs.getDouble(_keyTotalClicks) ?? 0;
+    final clickPower = prefs.getDouble(_keyClickPower) ?? 1;
+
+    Map<String, int> owned = {};
+    final ownedJson = prefs.getString(_keyOwned);
+    if (ownedJson != null) {
+      final decoded = jsonDecode(ownedJson) as Map<String, dynamic>;
+      owned = decoded.map((k, v) => MapEntry(k, (v as num).toInt()));
+    }
+
+    Set<String> purchasedUpgrades = {};
+    final upgradesList = prefs.getStringList(_keyPurchasedUpgrades);
+    if (upgradesList != null) {
+      purchasedUpgrades = upgradesList.toSet();
+    }
+
+    return GameState._(
+      totalClicks: totalClicks,
+      clickPower: clickPower,
+      owned: owned,
+      purchasedUpgrades: purchasedUpgrades,
+    );
+  }
+
+  Future<void> _save() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_keyTotalClicks, _totalClicks);
+    await prefs.setDouble(_keyClickPower, _clickPower);
+    await prefs.setString(_keyOwned, jsonEncode(_owned));
+    await prefs.setStringList(
+        _keyPurchasedUpgrades, _purchasedUpgrades.toList());
   }
 
   // ── Getters ──────────────────────────────────────────────────────────────────
@@ -57,6 +110,7 @@ class GameState extends ChangeNotifier {
     if (!canAfford(cost)) return;
     _totalClicks -= cost;
     _owned[character.id] = (_owned[character.id] ?? 0) + 1;
+    _save();
     notifyListeners();
   }
 
@@ -66,6 +120,7 @@ class GameState extends ChangeNotifier {
     _totalClicks -= upgrade.cost;
     _purchasedUpgrades.add(upgrade.id);
     _clickPower *= upgrade.multiplier;
+    _save();
     notifyListeners();
   }
 
@@ -80,6 +135,8 @@ class GameState extends ChangeNotifier {
   @override
   void dispose() {
     _ticker?.cancel();
+    _saveTicker?.cancel();
+    _save();
     super.dispose();
   }
 
