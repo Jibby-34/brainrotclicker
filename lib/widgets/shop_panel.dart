@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/game_data.dart';
 import 'building_card.dart';
+import 'store_panel.dart';
 import 'upgrade_card.dart';
 
 class ShopPanel extends StatefulWidget {
@@ -70,6 +71,12 @@ class _ShopPanelState extends State<ShopPanel> {
                     selected: _selected == 1,
                     onTap: () => setState(() => _selected = 1),
                   ),
+                  _PillTab(
+                    label: '🛒 Store',
+                    selected: _selected == 2,
+                    onTap: () => setState(() => _selected = 2),
+                    highlightColor: const Color(0xFFFFE66D),
+                  ),
                 ],
               ),
             ),
@@ -78,19 +85,23 @@ class _ShopPanelState extends State<ShopPanel> {
           Expanded(
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 200),
-              child: _selected == 0
-                  ? ListView(
-                      key: const ValueKey('chars'),
-                      padding: const EdgeInsets.only(bottom: 12),
-                      children:
-                          kCharacters.map((c) => BuildingCard(character: c)).toList(),
-                    )
-                  : ListView(
-                      key: const ValueKey('upgrades'),
-                      padding: const EdgeInsets.only(bottom: 12),
-                      children:
-                          kClickUpgrades.map((u) => UpgradeCard(upgrade: u)).toList(),
-                    ),
+              child: switch (_selected) {
+                0 => ListView(
+                    key: const ValueKey('chars'),
+                    padding: const EdgeInsets.only(bottom: 12),
+                    children: kCharacters
+                        .map((c) => BuildingCard(character: c))
+                        .toList(),
+                  ),
+                1 => ListView(
+                    key: const ValueKey('upgrades'),
+                    padding: const EdgeInsets.only(bottom: 12),
+                    children: kClickUpgrades
+                        .map((u) => UpgradeCard(upgrade: u))
+                        .toList(),
+                  ),
+                _ => const StorePanel(key: ValueKey('store')),
+              },
             ),
           ),
         ],
@@ -103,15 +114,20 @@ class _PillTab extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
+  final Color? highlightColor;
 
   const _PillTab({
     required this.label,
     required this.selected,
     required this.onTap,
+    this.highlightColor,
   });
 
   @override
   Widget build(BuildContext context) {
+    final color = highlightColor ?? const Color(0xFFB06EFF);
+    final shadowHex = highlightColor != null ? 0x60FFE66D : 0x60B06EFF;
+
     return Expanded(
       child: GestureDetector(
         onTap: onTap,
@@ -120,13 +136,13 @@ class _PillTab extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(28),
-            color: selected ? const Color(0xFFB06EFF) : Colors.transparent,
+            color: selected ? color : Colors.transparent,
             boxShadow: selected
-                ? const [
+                ? [
                     BoxShadow(
-                      color: Color(0x60B06EFF),
+                      color: Color(shadowHex),
                       blurRadius: 0,
-                      offset: Offset(0, 3),
+                      offset: const Offset(0, 3),
                     ),
                   ]
                 : [],
@@ -135,7 +151,7 @@ class _PillTab extends StatelessWidget {
             label,
             textAlign: TextAlign.center,
             style: GoogleFonts.bangers(
-              fontSize: 15,
+              fontSize: 14,
               letterSpacing: 1,
               color: selected ? Colors.white : Colors.white38,
             ),

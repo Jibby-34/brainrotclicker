@@ -3,6 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'models/game_state.dart';
 import 'screens/game_screen.dart';
+import 'services/ad_service.dart';
+import 'services/iap_service.dart';
+import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,19 +19,52 @@ void main() async {
       statusBarIconBrightness: Brightness.light,
     ),
   );
+
   final gameState = await GameState.load();
-  runApp(BrainrotClickerApp(gameState: gameState));
+
+  // Initialize notifications and schedule reminders with the current count.
+  await NotificationService.init();
+  await NotificationService.scheduleReminders(gameState.totalClicks);
+
+  final adService = AdService();
+  await adService.initialize();
+
+  final iapService = IAPService();
+  await iapService.initialize(
+    onSuccess: gameState.handleIapPurchase,
+    onFailed: () {},
+    alreadyPurchased: IAPService.nonConsumableIds
+        .where(gameState.isIapUpgradePurchased)
+        .toSet(),
+  );
+
+  runApp(BrainrotClickerApp(
+    gameState: gameState,
+    adService: adService,
+    iapService: iapService,
+  ));
 }
 
 class BrainrotClickerApp extends StatelessWidget {
-  const BrainrotClickerApp({super.key, required this.gameState});
+  const BrainrotClickerApp({
+    super.key,
+    required this.gameState,
+    required this.adService,
+    required this.iapService,
+  });
 
   final GameState gameState;
+  final AdService adService;
+  final IAPService iapService;
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider.value(
-      value: gameState,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: gameState),
+        ChangeNotifierProvider.value(value: adService),
+        ChangeNotifierProvider.value(value: iapService),
+      ],
       child: MaterialApp(
         title: 'Brainrot Clicker',
         debugShowCheckedModeBanner: false,

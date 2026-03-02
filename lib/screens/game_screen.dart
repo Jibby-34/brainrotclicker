@@ -3,11 +3,55 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/game_state.dart';
+import '../services/notification_service.dart';
 import '../widgets/click_area.dart';
 import '../widgets/shop_panel.dart';
 
-class GameScreen extends StatelessWidget {
+class GameScreen extends StatefulWidget {
   const GameScreen({super.key});
+
+  @override
+  State<GameScreen> createState() => _GameScreenState();
+}
+
+class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowOfflineDialog());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      // Reschedule with the latest brain count so notifications stay accurate.
+      final gs = context.read<GameState>();
+      NotificationService.scheduleReminders(gs.totalClicks);
+    }
+  }
+
+  void _maybeShowOfflineDialog() {
+    if (!mounted) return;
+    final gs = context.read<GameState>();
+    if (gs.pendingOfflineEarnings <= 0) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _OfflineEarningsDialog(
+        earnings: gs.pendingOfflineEarnings,
+        seconds: gs.offlineSeconds,
+        onClaim: gs.claimOfflineEarnings,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -47,6 +91,161 @@ class GameScreen extends StatelessWidget {
   }
 }
 
+// ── Offline earnings dialog ────────────────────────────────────────────────────
+
+class _OfflineEarningsDialog extends StatelessWidget {
+  final double earnings;
+  final double seconds;
+  final VoidCallback onClaim;
+
+  const _OfflineEarningsDialog({
+    required this.earnings,
+    required this.seconds,
+    required this.onClaim,
+  });
+
+  String _formatDuration(double secs) {
+    final h = (secs ~/ 3600);
+    final m = ((secs % 3600) ~/ 60);
+    if (h > 0 && m > 0) return '${h}h ${m}m';
+    if (h > 0) return '${h}h';
+    return '${m}m';
+  }
+
+  String _formatNumber(double n) {
+    if (n >= 1e12) return '${(n / 1e12).toStringAsFixed(1)}T';
+    if (n >= 1e9) return '${(n / 1e9).toStringAsFixed(1)}B';
+    if (n >= 1e6) return '${(n / 1e6).toStringAsFixed(1)}M';
+    if (n >= 1e3) return '${(n / 1e3).toStringAsFixed(1)}K';
+    return n.toStringAsFixed(0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF2A1060), Color(0xFF0D1A5C)],
+          ),
+          border: Border.all(
+            color: const Color(0xFFB06EFF).withValues(alpha: 0.5),
+            width: 2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFB06EFF).withValues(alpha: 0.3),
+              blurRadius: 32,
+              spreadRadius: 4,
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('😴', style: TextStyle(fontSize: 48)),
+            const SizedBox(height: 10),
+            OutlinedText(
+              'WELCOME BACK!',
+              style: GoogleFonts.bangers(
+                fontSize: 26,
+                color: const Color(0xFFFFE66D),
+                letterSpacing: 3,
+              ),
+              strokeColor: Colors.black,
+              strokeWidth: 3,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'You were gone for ${_formatDuration(seconds)}',
+              style: GoogleFonts.nunito(
+                fontSize: 13,
+                color: Colors.white60,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFF9F43), Color(0xFFFFD700)],
+                ),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0xAAFF9F43),
+                    blurRadius: 0,
+                    offset: Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('🧠', style: TextStyle(fontSize: 28)),
+                  const SizedBox(width: 8),
+                  OutlinedText(
+                    '+${_formatNumber(earnings)}',
+                    style: GoogleFonts.bangers(
+                      fontSize: 34,
+                      color: Colors.white,
+                      letterSpacing: 1,
+                    ),
+                    strokeColor: const Color(0xFFB25900),
+                    strokeWidth: 3,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Collected at ${(GameState.offlineRateMultiplier * 100).toStringAsFixed(0)}% efficiency while offline',
+              style: GoogleFonts.nunito(
+                fontSize: 11,
+                color: Colors.white38,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 22),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () {
+                  onClaim();
+                  Navigator.of(context).pop();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFB06EFF),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  elevation: 0,
+                ),
+                child: Text(
+                  'COLLECT BRAINS',
+                  style: GoogleFonts.bangers(
+                    fontSize: 18,
+                    letterSpacing: 2,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ── Animated background bubbles ───────────────────────────────────────────────
 
 class _BackgroundBubbles extends StatefulWidget {
@@ -79,7 +278,7 @@ class _BackgroundBubblesState extends State<_BackgroundBubbles>
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _controller,
-      builder: (_, __) {
+      builder: (_, _) {
         final t = _controller.value * 2 * pi;
         return Stack(
           children: [

@@ -9,23 +9,48 @@ class GameState extends ChangeNotifier {
   double _clickPower;
   final Map<String, int> _owned;
   final Set<String> _purchasedUpgrades;
+  final Set<String> _iapUpgrades;
   Timer? _ticker;
   Timer? _saveTicker;
+
+  /// Brains earned while the app was closed, waiting to be claimed.
+  double _pendingOfflineEarnings;
+
+  /// How many seconds the player was offline (for display purposes).
+  double _offlineSeconds;
 
   static const _keyTotalClicks = 'totalClicks';
   static const _keyClickPower = 'clickPower';
   static const _keyOwned = 'owned';
   static const _keyPurchasedUpgrades = 'purchasedUpgrades';
+  static const _keyIapUpgrades = 'iapUpgrades';
+  static const _keyLastSeen = 'lastSeen';
+
+  /// Offline rate: 50 % of normal CPS.
+  static const double offlineRateMultiplier = 0.5;
+
+  /// Maximum offline time credited (8 hours).
+  static const double _maxOfflineSeconds = 8 * 3600;
+
+  // IAP upgrade product IDs (mirrored from IAPService to avoid circular import)
+  static const iapSpeedDemon = 'upgrade_speed_demon';
+  static const iapBrainOverload = 'upgrade_brain_overload';
 
   GameState._({
     double totalClicks = 0,
     double clickPower = 1,
     Map<String, int>? owned,
     Set<String>? purchasedUpgrades,
+    Set<String>? iapUpgrades,
+    double pendingOfflineEarnings = 0,
+    double offlineSeconds = 0,
   })  : _totalClicks = totalClicks,
         _clickPower = clickPower,
         _owned = owned ?? {},
-        _purchasedUpgrades = purchasedUpgrades ?? {} {
+        _purchasedUpgrades = purchasedUpgrades ?? {},
+        _iapUpgrades = iapUpgrades ?? {},
+        _pendingOfflineEarnings = pendingOfflineEarnings,
+        _offlineSeconds = offlineSeconds {
     for (final c in kCharacters) {
       _owned.putIfAbsent(c.id, () => 0);
     }
@@ -52,12 +77,47 @@ class GameState extends ChangeNotifier {
       purchasedUpgrades = upgradesList.toSet();
     }
 
-    return GameState._(
+    Set<String> iapUpgrades = {};
+    final iapList = prefs.getStringList(_keyIapUpgrades);
+    if (iapList != null) {
+      iapUpgrades = iapList.toSet();
+    }
+
+    // ── Offline earnings calculation ─────────────────────────────────────────
+    double pendingOffline = 0;
+    double offlineSeconds = 0;
+    final lastSeenMs = prefs.getInt(_keyLastSeen);
+    if (lastSeenMs != null) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      offlineSeconds =
+          ((now - lastSeenMs) / 1000).clamp(0, _maxOfflineSeconds).toDouble();
+
+      // Compute CPS from the saved building counts (mirrors the cps getter).
+      double savedCps = 0;
+      for (final c in kCharacters) {
+        savedCps += (owned[c.id] ?? 0) * c.cpsPerUnit;
+      }
+      if (iapUpgrades.contains(iapSpeedDemon)) savedCps *= 2;
+
+      // Only show the dialog if the player has been gone > 1 min and has CPS.
+      if (savedCps > 0 && offlineSeconds >= 60) {
+        pendingOffline = savedCps * offlineSeconds * offlineRateMultiplier;
+      }
+    }
+
+    final state = GameState._(
       totalClicks: totalClicks,
       clickPower: clickPower,
       owned: owned,
       purchasedUpgrades: purchasedUpgrades,
+      iapUpgrades: iapUpgrades,
+      pendingOfflineEarnings: pendingOffline,
+      offlineSeconds: offlineSeconds,
     );
+
+    // Write lastSeen immediately so subsequent relaunches measure from now.
+    await state._save();
+    return state;
   }
 
   Future<void> _save() async {
@@ -67,20 +127,29 @@ class GameState extends ChangeNotifier {
     await prefs.setString(_keyOwned, jsonEncode(_owned));
     await prefs.setStringList(
         _keyPurchasedUpgrades, _purchasedUpgrades.toList());
+    await prefs.setStringList(_keyIapUpgrades, _iapUpgrades.toList());
+    await prefs.setInt(
+        _keyLastSeen, DateTime.now().millisecondsSinceEpoch);
   }
 
   // ── Getters ──────────────────────────────────────────────────────────────────
 
   double get totalClicks => _totalClicks;
   double get clickPower => _clickPower;
+  double get pendingOfflineEarnings => _pendingOfflineEarnings;
+  double get offlineSeconds => _offlineSeconds;
 
   double get cps {
     double total = 0;
     for (final c in kCharacters) {
       total += (_owned[c.id] ?? 0) * c.cpsPerUnit;
     }
+    if (_iapUpgrades.contains(iapSpeedDemon)) total *= 2;
     return total;
   }
+
+  bool isIapUpgradePurchased(String productId) =>
+      _iapUpgrades.contains(productId);
 
   int owned(String characterId) => _owned[characterId] ?? 0;
   bool isUpgradePurchased(String upgradeId) =>
@@ -103,6 +172,16 @@ class GameState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Awards the pending offline brains and clears the pending amount.
+  void claimOfflineEarnings() {
+    if (_pendingOfflineEarnings <= 0) return;
+    _totalClicks += _pendingOfflineEarnings;
+    _pendingOfflineEarnings = 0;
+    _offlineSeconds = 0;
+    _save();
+    notifyListeners();
+  }
+
   bool canAfford(double cost) => _totalClicks >= cost;
 
   void buyBuilding(CharacterBuilding character) {
@@ -122,6 +201,36 @@ class GameState extends ChangeNotifier {
     _clickPower *= upgrade.multiplier;
     _save();
     notifyListeners();
+  }
+
+  void addBrains(double amount) {
+    _totalClicks += amount;
+    _save();
+    notifyListeners();
+  }
+
+  void applyIapUpgrade(String productId) {
+    if (_iapUpgrades.contains(productId)) return;
+    _iapUpgrades.add(productId);
+    if (productId == iapBrainOverload) {
+      _clickPower *= 5;
+    }
+    _save();
+    notifyListeners();
+  }
+
+  void handleIapPurchase(String productId) {
+    switch (productId) {
+      case 'brains_small':
+        addBrains(1000);
+      case 'brains_medium':
+        addBrains(10000);
+      case 'brains_large':
+        addBrains(100000);
+      case iapSpeedDemon:
+      case iapBrainOverload:
+        applyIapUpgrade(productId);
+    }
   }
 
   // ── Internal ─────────────────────────────────────────────────────────────────
